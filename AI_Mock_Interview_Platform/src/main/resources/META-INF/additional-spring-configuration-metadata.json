@@ -1,0 +1,8 @@
+{
+  "properties": [
+    {
+      "name": "spring.flyway.enabled",
+      "type": "java.lang.String",
+      "description": "Description for spring.flyway.enabled."
+  }
+] }
