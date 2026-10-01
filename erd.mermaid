@@ -1,0 +1,625 @@
+# AI Mock Interview Platform — API Design (Phase 3, Revised)
+
+> Đặc tả API theo phong cách RESTful, chưa implement. Dùng làm hợp đồng (contract) giữa Frontend, Backend và API Gateway.
+> **Changelog v1.1**: sửa ngữ nghĩa status code, thống nhất async semantics, đóng vòng auth flow, bổ sung vòng đời Application, state machine và security notes.
+
+---
+
+## 0. Quy ước chung
+
+**Base URL:** `https://api.mockinterview.ai/api/v1`
+
+**Auth:** JWT Bearer Token trong header `Authorization: Bearer <accessToken>`, trừ các endpoint đánh dấu "Không cần auth".
+
+**Content-Type:** `application/json` (riêng upload file dùng `multipart/form-data`)
+
+**Phân trang (cho mọi API dạng list):**
+Query params: `page` (default 0), `size` (default 20, max 100), `sort` (vd: `createdAt,desc`)
+
+```json
+{
+  "content": [],        // dữ liệu thật (mảng các item)
+  "page": 0,            // trang hiện tại
+  "size": 20,           // số item/trang
+  "totalElements": 132, // tổng số bản ghi
+  "totalPages": 7       // tổng số trang
+}
+
+```
+
+**Error Response Envelope (thống nhất):**
+```json
+{
+  "error": {
+    "code": "STRING_ERROR_CODE",
+    "message": "Mô tả lỗi dễ hiểu",
+    "timestamp": "2026-07-02T10:00:00Z",
+    "path": "/api/v1/...",
+    "details": [
+      { "field": "email", "issue": "must be a valid email" }
+    ]
+  }
+}
+```
+
+**Quy ước Async (áp dụng thống nhất toàn hệ thống):**
+- Tác vụ bất đồng bộ trả `202 Accepted` + header `Location: <url resource>` + body chứa `status` đang xử lý.
+- Resource **tồn tại nhưng kết quả chưa sẵn sàng** → luôn trả `422` với code dạng `*_NOT_READY`. Client hiểu là "poll tiếp".
+- Resource **không tồn tại** → `404`. Client hiểu là "dừng, không retry".
+- Tác vụ xử lý thất bại → resource mang `status: FAILED` kèm `failureReason`, GET vẫn trả `200`.
+
+**Idempotency:** các endpoint POST đánh dấu 🔁 hỗ trợ header `Idempotency-Key: <uuid>`. Gửi lại cùng key trong 24h trả về kết quả lần đầu, không tạo trùng.
+
+**Bảng status code dùng chung:**
+
+| Status | Ý nghĩa | Khi nào dùng |
+|---|---|---|
+| 200 OK | Thành công, có trả dữ liệu | GET, PUT, PATCH thành công |
+| 201 Created | Tạo mới thành công | POST tạo resource |
+| 202 Accepted | Đã nhận, xử lý bất đồng bộ | Upload CV, sinh câu hỏi AI |
+| 204 No Content | Thành công, không trả dữ liệu | DELETE, logout thành công |
+| 400 Bad Request | Request sai định dạng/validation | Thiếu field, sai kiểu dữ liệu |
+| 401 Unauthorized | **Chỉ dùng khi request chưa được xác thực** | Thiếu / sai / hết hạn JWT |
+| 403 Forbidden | Đã xác thực nhưng không đủ quyền | Sai role, không phải chủ sở hữu, tài khoản bị khoá |
+| 404 Not Found | Resource không tồn tại | id không tồn tại |
+| 409 Conflict | Xung đột trạng thái dữ liệu | Email trùng, apply 2 lần, chuyển trạng thái sai |
+| 422 Unprocessable Entity | Đúng format nhưng sai nghiệp vụ / chưa sẵn sàng | Sai mật khẩu cũ, kết quả AI chưa xong |
+| 413 Payload Too Large | File quá dung lượng | Upload vượt giới hạn |
+| 429 Too Many Requests | Rate limit | Gọi API AI quá tần suất |
+| 500 Internal Server Error | Lỗi hệ thống | Exception không lường trước |
+
+---
+
+## 1. AUTHENTICATION & ACCOUNT API
+
+### POST /auth/register 🔁
+Mô tả: Đăng ký tài khoản mới (mặc định role USER). Gửi email chứa mã xác thực.
+Auth: Không cần
+
+Request:
+```json
+{ "email": "string", "password": "string"}
+```
+
+Response `201 Created`:
+```json
+{ "id": "uuid", "email": "string", "status": "PENDING_VERIFY" }
+```
+
+| Status | Code |
+|---|---|
+| 400 | VALIDATION_ERROR |
+| 409 | EMAIL_ALREADY_EXISTS |
+
+---
+
+### POST /auth/verify-email
+Mô tả: Xác thực email bằng token trong link/mã OTP. Chuyển user `PENDING_VERIFY → ACTIVE`.
+Auth: Không cần
+
+Request: `{ "email": "string", "verificationToken": "string" }`
+Response `200 OK`: `{ "status": "ACTIVE" }`
+
+| Status | Code |
+|---|---|
+| 400 | INVALID_VERIFICATION_TOKEN |
+| 409 | ALREADY_VERIFIED |
+| 410 | VERIFICATION_TOKEN_EXPIRED |
+
+### POST /auth/resend-verification
+Auth: Không cần. Request: `{ "email": "string" }`
+Response `204 No Content` (luôn trả 204 kể cả email không tồn tại — chống dò email).
+Rate limit: 1 request/60s/email → `429 RATE_LIMIT_EXCEEDED`.
+
+---
+
+### POST /auth/forgot-password
+Auth: Không cần. Request: `{ "email": "string" }`
+Response `204 No Content` (luôn 204, chống user enumeration). Gửi email chứa reset token (hạn 15 phút, dùng 1 lần).
+
+### POST /auth/reset-password
+Auth: Không cần. Request: `{ "resetToken": "string", "newPassword": "string" }`
+Response `204 No Content`. Side-effect: revoke toàn bộ refresh token của user.
+
+| Status | Code |
+|---|---|
+| 400 | VALIDATION_ERROR (mật khẩu yếu) |
+| 400 | INVALID_RESET_TOKEN |
+| 410 | RESET_TOKEN_EXPIRED |
+
+---
+
+### POST /auth/login
+Auth: Không cần
+
+Request: `{ "email": "string", "password": "string" }`
+
+Response `200 OK`:
+```json
+{ "accessToken": "string", "refreshToken": "string", "tokenType": "Bearer", "expiresIn": 3600 }
+```
+
+| Status | Code | Ghi chú |
+|---|---|---|
+| 400 | VALIDATION_ERROR | |
+| 401 | INVALID_CREDENTIALS | Sai email hoặc mật khẩu |
+| 403 | ACCOUNT_LOCKED | Đã xác thực đúng nhưng tài khoản bị khoá |
+| 403 | EMAIL_NOT_VERIFIED | Chưa verify email |
+
+> Đổi từ `423` → `403 + code`: 423 là mã WebDAV, nhiều client/proxy không xử lý chuẩn. Ngữ nghĩa "biết bạn là ai nhưng từ chối phục vụ" chính là 403.
+
+---
+
+### POST /auth/refresh
+Mô tả: Cấp cặp token mới. **Refresh token rotation**: token cũ bị revoke ngay, phát hiện reuse → revoke toàn bộ phiên.
+Auth: Không cần
+
+Request: `{ "refreshToken": "string" }`
+Response `200 OK`: giống login.
+
+| Status | Code |
+|---|---|
+| 401 | INVALID_REFRESH_TOKEN |
+| 401 | REFRESH_TOKEN_EXPIRED |
+
+### POST /auth/logout
+Auth: Bắt buộc. Request: `{ "refreshToken": "string" }`
+Response `204 No Content`. Lỗi: `401 UNAUTHORIZED`.
+
+---
+
+### GET /users/me
+Auth: Bắt buộc
+
+Response `200 OK`:
+```json
+{
+  "id": "uuid", "email": "string", "fullName": "string", "phone": "string",
+  "avatarUrl": "string (presigned, hạn 1h)",
+  "roles": ["USER"], "status": "ACTIVE"
+}
+```
+
+### PUT /users/me
+Auth: Bắt buộc. Request: `{ "fullName": "string", "phone": "string" }`
+Response `200 OK`: object user đã cập nhật.
+> `avatarUrl` bị loại khỏi body — không nhận URL tự do từ client (rủi ro SSRF/link bẩn). Dùng endpoint upload bên dưới.
+
+### POST /users/me/avatar
+Auth: Bắt buộc. Content-Type: `multipart/form-data`, field `file` (jpg/png/webp, ≤2MB).
+Response `200 OK`: `{ "avatarUrl": "string" }`
+Lỗi: `400 INVALID_FILE_TYPE`, `413 FILE_TOO_LARGE`.
+
+### PUT /users/me/password
+Auth: Bắt buộc. Request: `{ "oldPassword": "string", "newPassword": "string" }`
+Response `204 No Content`. Side-effect: revoke toàn bộ refresh token khác.
+
+| Status | Code | Ghi chú |
+|---|---|---|
+| 400 | VALIDATION_ERROR | Mật khẩu mới yếu |
+| 422 | WRONG_OLD_PASSWORD | **Đổi từ 401 → 422**: user đã đăng nhập hợp lệ, đây là lỗi nghiệp vụ. Trả 401 sẽ khiến FE interceptor tự logout. |
+
+---
+
+## 2. CV INTELLIGENCE API
+
+**State machine của CV:** `UPLOADED → PROCESSING → PARSED | FAILED`
+
+### POST /cvs 🔁
+Mô tả: Upload CV (PDF/DOCX), đẩy vào Kafka xử lý bất đồng bộ.
+Auth: ROLE_USER. Content-Type: `multipart/form-data`, field `file` (pdf/docx, ≤10MB).
+Giới hạn: tối đa 10 CV/user.
+
+Response `202 Accepted` + header `Location: /api/v1/cvs/{id}`:
+```json
+{ "id": "uuid", "fileUrl": "string (presigned)", "fileType": "PDF", "status": "UPLOADED" }
+```
+
+| Status | Code |
+|---|---|
+| 400 | INVALID_FILE_TYPE |
+| 413 | FILE_TOO_LARGE |
+| 409 | CV_QUOTA_EXCEEDED |
+| 429 | RATE_LIMIT_EXCEEDED |
+
+### GET /cvs
+Auth: Bắt buộc. Query: `page`, `size`, `status`.
+Response `200 OK`: danh sách phân trang rút gọn `(id, fileName, status, uploadedAt)`.
+
+### GET /cvs/{cvId}
+Auth: Chủ sở hữu hoặc ADMIN.
+
+Response `200 OK`:
+```json
+{
+  "id": "uuid",
+  "status": "PARSED",
+  "failureReason": null,
+  "fileUrl": "string (presigned, hạn 1h)",
+  "skills": [{ "name": "Java", "proficiencyLevel": 4 }],
+  "educations": [{ "schoolName": "string", "degree": "string" }],
+  "experiences": [{ "companyName": "string", "position": "string" }],
+  "projects": [{ "projectName": "string", "techStack": "string" }]
+}
+```
+> Khi `status: FAILED`, field `failureReason` cho biết lý do (vd: "File PDF bị mã hoá"). GET vẫn trả 200 — client dựa vào `status` để hiển thị.
+
+Lỗi: `403 FORBIDDEN`, `404 CV_NOT_FOUND`.
+
+### PUT /cvs/{cvId} 🔁
+Mô tả: Upload lại file, trigger parse lại. Auth: Chủ sở hữu.
+Response `202 Accepted` + `Location`: object CV với `status: "PROCESSING"`.
+Lỗi: `404 CV_NOT_FOUND`, `400 INVALID_FILE_TYPE`, `413 FILE_TOO_LARGE`, `409 CV_PROCESSING` (đang parse dở, chưa thể upload đè).
+
+### DELETE /cvs/{cvId}
+Auth: Chủ sở hữu. Soft delete.
+Response `204 No Content`.
+Lỗi: `404 CV_NOT_FOUND`, `409 CV_IN_USE` (đang gắn với application ở trạng thái active — xem ghi chú snapshot mục 9).
+
+### GET /cvs/{cvId}/ats-score
+Auth: Chủ sở hữu.
+
+Response `200 OK`:
+```json
+{
+  "cvId": "uuid",
+  "score": 78.5,
+  "breakdown": { "formatting": 20, "keywordMatch": 40, "readability": 18.5 },
+  "evaluatedAt": "2026-07-02T10:00:00Z"
+}
+```
+
+| Status | Code | Ghi chú |
+|---|---|---|
+| 404 | CV_NOT_FOUND | CV không tồn tại |
+| 422 | SCORE_NOT_READY | CV tồn tại, đang xử lý/chờ chấm — poll tiếp |
+| 422 | CV_PROCESSING_FAILED | Parse thất bại, không thể chấm — xem `failureReason` ở GET /cvs/{id} |
+
+### GET /cvs/{cvId}/career-gap
+Response `200 OK`: `{ "cvId": "uuid", "gapSummary": "string", "recommendedSkills": ["Kubernetes"] }`
+Lỗi: giống ats-score (`ANALYSIS_NOT_READY`).
+
+### GET /cvs/{cvId}/roadmap
+Response `200 OK`:
+```json
+{
+  "cvId": "uuid",
+  "roadmap": [{ "stage": "Tháng 1-2", "focus": "Java Core + Spring Boot", "resources": ["..."] }],
+  "generatedAt": "2026-07-02T10:00:00Z"
+}
+```
+Lỗi: giống trên (`ROADMAP_NOT_READY`).
+
+---
+
+## 3. JOB, APPLICATION & RECRUITER API
+
+**Trở thành Recruiter:** user gửi `POST /recruiter-requests` (kèm thông tin công ty), ADMIN duyệt qua `PATCH /admin/recruiter-requests/{id}`. Sau khi duyệt, hệ thống gán `ROLE_RECRUITER`.
+
+### POST /recruiter-requests 🔁
+Auth: ROLE_USER. Request: `{ "companyName": "string", "companyWebsite": "string", "reason": "string" }`
+Response `201 Created`: `{ "id": "uuid", "status": "PENDING" }`
+Lỗi: `409 REQUEST_ALREADY_PENDING`, `409 ALREADY_RECRUITER`.
+
+---
+
+### POST /jobs
+Auth: ROLE_RECRUITER.
+Request: `{ "title": "string", "description": "string", "requirements": "string", "level": "JUNIOR" }`
+Response `201 Created`: object JobDescription.
+Lỗi: `403 FORBIDDEN`, `400 VALIDATION_ERROR`.
+
+### GET /jobs
+Mô tả: Danh sách JD. **Public — không cần auth** (quyết định dứt khoát để FE build trang tìm việc cho khách vãng lai). Chỉ trả JD `status: PUBLISHED`.
+Query: `level`, `keyword`, `page`, `size`, `sort`.
+Response `200 OK`: danh sách phân trang.
+
+### GET /jobs/{jobId}
+Public với JD `PUBLISHED`; chủ sở hữu/ADMIN xem được mọi trạng thái.
+Response `200 OK`. Lỗi: `404 JOB_NOT_FOUND`.
+
+### PUT /jobs/{jobId}
+Auth: Recruiter chủ sở hữu. Lỗi: `403`, `404 JOB_NOT_FOUND`.
+
+### PATCH /jobs/{jobId}
+Mô tả: Đổi trạng thái JD. Request: `{ "status": "PUBLISHED" }`. Hợp lệ: `DRAFT → PUBLISHED → CLOSED`.
+Lỗi: `409 INVALID_STATUS_TRANSITION`.
+
+### DELETE /jobs/{jobId}
+Auth: Chủ sở hữu. Response `204`. Lỗi: `403`, `404`, `409 JOB_HAS_APPLICATIONS` (dùng PATCH → CLOSED thay thế).
+
+---
+
+### POST /jobs/{jobId}/applications 🔁
+Mô tả: User ứng tuyển, đính kèm 1 CV đã `PARSED`. Hệ thống **snapshot CV tại thời điểm apply**.
+Auth: ROLE_USER.
+
+Request: `{ "cvId": "uuid" }`
+Response `201 Created`:
+```json
+{ "id": "uuid", "jobId": "uuid", "status": "APPLIED", "appliedAt": "2026-07-02T10:00:00Z" }
+```
+
+| Status | Code |
+|---|---|
+| 404 | JOB_NOT_FOUND / CV_NOT_FOUND |
+| 409 | ALREADY_APPLIED |
+| 409 | JOB_NOT_PUBLISHED |
+| 422 | CV_NOT_PARSED_YET |
+
+### GET /users/me/applications
+Mô tả: User xem các job mình đã ứng tuyển. Auth: Bắt buộc.
+Query: `status`, `page`, `size`.
+Response `200 OK`: danh sách phân trang `(id, jobTitle, status, appliedAt)`.
+
+### GET /jobs/{jobId}/applications
+Auth: Recruiter chủ JD. Query: `status`, `page`, `size`.
+Response `200 OK`: danh sách JobApplication kèm user + CV rút gọn.
+Lỗi: `403`, `404 JOB_NOT_FOUND`.
+
+### PATCH /applications/{applicationId}
+Mô tả: Recruiter cập nhật trạng thái ứng viên.
+Auth: Recruiter chủ JD.
+
+Request: `{ "status": "SHORTLISTED", "note": "string" }`
+**State machine:** `APPLIED → SCREENING → SHORTLISTED → INTERVIEW_INVITED → OFFERED | REJECTED` (REJECTED hợp lệ từ mọi trạng thái trước OFFERED). Side-effect: tạo Notification cho ứng viên.
+
+Response `200 OK`. Lỗi: `403`, `404 APPLICATION_NOT_FOUND`, `409 INVALID_STATUS_TRANSITION`.
+
+### GET /jobs/{jobId}/rankings
+Auth: Recruiter chủ JD.
+Response `200 OK`: `[{ "userId", "fullName", "rankScore" }]` giảm dần theo `rankScore`.
+Lỗi: `422 RANKING_NOT_READY` (AI đang chấm).
+
+---
+
+## 4. INTERVIEW API
+
+**State machine của Session:** `IN_PROGRESS ⇄ PAUSED`, `IN_PROGRESS → COMPLETED | CANCELLED` (COMPLETED/CANCELLED là trạng thái cuối).
+
+### POST /interview-sessions 🔁
+Auth: ROLE_USER. `cvId`, `jobId` optional.
+
+Request: `{ "cvId": "uuid", "jobId": "uuid", "type": "TECHNICAL", "mode": "CHAT" }`
+- `type`: `TECHNICAL | BEHAVIORAL | MIXED`
+- `mode`: `CHAT | VOICE | HYBRID`
+
+Response `201 Created`:
+```json
+{
+  "id": "uuid", "type": "TECHNICAL", "mode": "CHAT",
+  "status": "IN_PROGRESS", "startedAt": "2026-07-02T10:00:00Z",
+  "firstQuestion": { "id": "uuid", "questionText": "string", "orderIndex": 1 }
+}
+```
+
+| Status | Code |
+|---|---|
+| 400 | VALIDATION_ERROR |
+| 404 | CV_NOT_FOUND / JOB_NOT_FOUND |
+| 422 | CV_NOT_PARSED_YET |
+| 429 | RATE_LIMIT_EXCEEDED |
+| 409 | SESSION_LIMIT_REACHED (tối đa 3 phiên IN_PROGRESS đồng thời) |
+
+### GET /interview-sessions/{sessionId}
+Auth: Chủ sở hữu. Response `200 OK`: session + mảng `questions`.
+Lỗi: `403`, `404 SESSION_NOT_FOUND`.
+
+### PATCH /interview-sessions/{sessionId}
+Request: `{ "status": "PAUSED" }` — hợp lệ: `PAUSED`, `IN_PROGRESS` (resume), `CANCELLED`.
+Response `200 OK`. Lỗi: `404`, `409 INVALID_STATUS_TRANSITION`.
+
+### POST /interview-sessions/{sessionId}/recordings 🔁
+Mô tả: Upload file ghi âm cho **một câu trả lời** trong phiên Voice/Hybrid. Upload **trước**, rồi tham chiếu `recordingId` khi submit answer.
+Content-Type: `multipart/form-data`, field `file` (mp3/wav/webm, ≤50MB).
+
+Response `201 Created`: `{ "id": "uuid", "fileUrl": "string (presigned)", "duration": 120 }`
+Lỗi: `400 INVALID_FILE_TYPE`, `413 FILE_TOO_LARGE`, `404 SESSION_NOT_FOUND`, `409 SESSION_NOT_IN_PROGRESS`.
+
+### POST /interview-sessions/{sessionId}/answers 🔁
+Mô tả: Gửi câu trả lời, nhận câu hỏi tiếp theo. Với mode VOICE: gửi `recordingId` (đã upload ở trên) thay vì `answerText`.
+
+Request:
+```json
+{
+  "questionId": "uuid",
+  "answerText": "string | null",
+  "recordingId": "uuid | null",
+  "durationSeconds": 45
+}
+```
+Ràng buộc: phải có ít nhất một trong `answerText` / `recordingId`.
+
+Response `200 OK`:
+```json
+{
+  "accepted": true,
+  "nextQuestion": { "id": "uuid", "questionText": "string", "orderIndex": 2 },
+  "sessionStatus": "IN_PROGRESS"
+}
+```
+Câu cuối: `nextQuestion: null`, `sessionStatus: "COMPLETED"` → trigger chấm điểm bất đồng bộ.
+
+| Status | Code |
+|---|---|
+| 400 | VALIDATION_ERROR (thiếu cả answerText lẫn recordingId) |
+| 404 | QUESTION_NOT_FOUND / RECORDING_NOT_FOUND |
+| 409 | QUESTION_ALREADY_ANSWERED |
+| 409 | SESSION_NOT_IN_PROGRESS |
+| 429 | RATE_LIMIT_EXCEEDED |
+
+### GET /interview-sessions/{sessionId}/transcript
+Response `200 OK`: `{ "sessionId": "uuid", "transcriptText": "string", "generatedAt": "..." }`
+
+| Status | Code | Ghi chú |
+|---|---|---|
+| 404 | SESSION_NOT_FOUND | Phiên không tồn tại |
+| 422 | TRANSCRIPT_NOT_READY | **Đổi từ 404 → 422** cho thống nhất async convention |
+
+### GET /interview-sessions/{sessionId}/result
+Auth: Chủ sở hữu.
+
+Response `200 OK`:
+```json
+{
+  "sessionId": "uuid",
+  "scores": {
+    "technicalScore": 80, "starScore": 70, "communicationScore": 85,
+    "problemSolvingScore": 75, "confidenceScore": 78, "overallScore": 77.6
+  },
+  "scoreDetails": [{ "criterionName": "Code correctness", "criterionScore": 82, "comment": "string" }],
+  "feedbackSuggestions": [{ "category": "Communication", "suggestionText": "string" }]
+}
+```
+Lỗi: `404 SESSION_NOT_FOUND`, `422 RESULT_NOT_READY`, `409 SESSION_NOT_COMPLETED` (phiên bị CANCELLED, không có kết quả).
+
+### GET /interview-sessions
+Auth: Bắt buộc. Query: `status`, `type`, `mode`, `page`, `size`, `sort`.
+Response `200 OK`: danh sách rút gọn `(id, type, mode, status, overallScore, startedAt)`.
+
+---
+
+## 5. ANALYTICS & DASHBOARD API
+
+### GET /dashboard/summary
+Auth: Bắt buộc.
+```json
+{ "totalSessions": 12, "averageOverallScore": 74.2, "totalCvUploaded": 3, "totalJobApplications": 5 }
+```
+
+### GET /dashboard/progress
+Query: `metric` (enum: `overallScore | technicalScore | communicationScore`), `from`, `to` (ISO 8601, mặc định 90 ngày gần nhất).
+```json
+{
+  "metric": "overallScore",
+  "points": [{ "recordedAt": "2026-06-01", "value": 65 }, { "recordedAt": "2026-06-15", "value": 74 }]
+}
+```
+Lỗi: `400 INVALID_METRIC`, `400 INVALID_DATE_RANGE` (from > to hoặc range > 1 năm).
+
+### GET /dashboard/skills-chart
+```json
+{
+  "skills": [
+    { "skillName": "Java", "history": [{ "recordedAt": "2026-06-01", "level": 3 }, { "recordedAt": "2026-07-01", "level": 4 }] }
+  ]
+}
+```
+
+---
+
+## 6. ADMIN & AI MANAGEMENT API
+
+### GET /admin/prompt-templates
+Auth: ROLE_ADMIN. Query: `type`, `isActive`, `page`, `size`.
+
+### POST /admin/prompt-templates
+Auth: ROLE_ADMIN. Request: `{ "name": "string", "type": "QUESTION_GEN", "promptContent": "string" }`
+Response `201 Created` (version = 1, hoặc latest + 1 nếu trùng name).
+Lỗi: `409 TEMPLATE_VERSION_CONFLICT`.
+
+### PUT /admin/prompt-templates/{id}
+Request: `{ "promptContent": "string", "isActive": true }`
+Response `200 OK`. Lỗi: `404 TEMPLATE_NOT_FOUND`.
+> Ràng buộc: mỗi `type` chỉ có 1 template `isActive: true` — activate template mới tự deactivate cái cũ (ghi audit log).
+
+### GET /admin/ai-providers
+Auth: ROLE_ADMIN. Response `200 OK`: danh sách AIProviderConfig, **secret trong `apiConfigJson` bị mask** (`"apiKey": "sk-***"`).
+
+### PUT /admin/ai-providers/{id}
+Request: `{ "apiConfigJson": {}, "isActive": true }`
+Response `200 OK`. Lỗi: `404 PROVIDER_NOT_FOUND`, `400 INVALID_CONFIG`.
+
+### GET /admin/ai-request-logs
+Query: `provider`, `from`, `to`, `page`, `size`. Response kèm aggregate `totalTokensUsed`, `totalCost`.
+> Dữ liệu log lớn → dùng **cursor-based pagination** (`cursor` param) thay offset khi triển khai thật.
+
+### GET /admin/audit-logs
+Auth: ROLE_ADMIN / ROLE_SUPER_ADMIN. Query: `adminId`, `action`, `from`, `to`, `page`, `size`.
+
+### GET /admin/users
+Query: `status`, `role`, `keyword`, `page`, `size`. Không bao giờ trả `passwordHash`.
+
+### PATCH /admin/users/{userId}/status
+Request: `{ "status": "LOCKED", "reason": "string" }` — hợp lệ: `ACTIVE ⇄ LOCKED`. Side-effect: LOCKED → revoke toàn bộ refresh token. Ghi audit log kèm `reason`.
+Response `200 OK`. Lỗi: `404 USER_NOT_FOUND`, `409 INVALID_STATUS_TRANSITION`, `403 CANNOT_LOCK_SELF`.
+
+### POST /admin/users/{userId}/roles
+Auth: ROLE_SUPER_ADMIN. Request: `{ "role": "ADMIN" }`
+Response `201 Created` (tạo mới quan hệ role — đổi từ 200).
+Lỗi: `403`, `404 USER_NOT_FOUND`, `409 ROLE_ALREADY_ASSIGNED`.
+
+### DELETE /admin/users/{userId}/roles/{role}
+Auth: ROLE_SUPER_ADMIN. Response `204 No Content`.
+Lỗi: `404 ROLE_NOT_ASSIGNED`, `403 CANNOT_REMOVE_LAST_SUPER_ADMIN`.
+
+### PATCH /admin/recruiter-requests/{id}
+Auth: ROLE_ADMIN. Request: `{ "status": "APPROVED", "note": "string" }` (`APPROVED | REJECTED`).
+Side-effect APPROVED: gán ROLE_RECRUITER + tạo Notification.
+Lỗi: `404 REQUEST_NOT_FOUND`, `409 REQUEST_ALREADY_RESOLVED`.
+
+---
+
+## 7. NOTIFICATION API
+
+### GET /notifications
+Auth: Bắt buộc. Query: `isRead`, `page`, `size`. Response `200 OK`. Kèm field `unreadCount` ở top-level.
+
+### PATCH /notifications/{id}
+Auth: Chủ sở hữu. Request: `{ "isRead": true }`
+Response `204 No Content`. Lỗi: `404 NOTIFICATION_NOT_FOUND`.
+> Đổi từ `PUT .../read` (verb trong URL) sang PATCH thuộc tính — thuần REST hơn và mở rộng được (vd: archive).
+
+### POST /notifications/mark-all-read
+Auth: Bắt buộc. Response `204 No Content`.
+> Bulk action giữ dạng verb-resource vì không map được vào một resource đơn lẻ — trade-off chấp nhận được.
+
+---
+
+## 8. Error Code Catalog (đã cập nhật)
+
+| Code | Status | Domain |
+|---|---|---|
+| VALIDATION_ERROR | 400 | Chung |
+| UNAUTHORIZED | 401 | Chung — chỉ lỗi xác thực token |
+| FORBIDDEN | 403 | Chung — sai quyền/ownership |
+| INVALID_CREDENTIALS | 401 | Auth |
+| ACCOUNT_LOCKED / EMAIL_NOT_VERIFIED | 403 | Auth |
+| EMAIL_ALREADY_EXISTS | 409 | Auth |
+| INVALID_REFRESH_TOKEN / REFRESH_TOKEN_EXPIRED | 401 | Auth |
+| INVALID_VERIFICATION_TOKEN / INVALID_RESET_TOKEN | 400 | Auth |
+| VERIFICATION_TOKEN_EXPIRED / RESET_TOKEN_EXPIRED | 410 | Auth |
+| WRONG_OLD_PASSWORD | 422 | Account |
+| CV_NOT_FOUND | 404 | CV |
+| INVALID_FILE_TYPE / FILE_TOO_LARGE | 400 / 413 | Upload chung |
+| CV_NOT_PARSED_YET / CV_PROCESSING | 422 / 409 | CV |
+| CV_PROCESSING_FAILED | 422 | CV |
+| CV_QUOTA_EXCEEDED / CV_IN_USE | 409 | CV |
+| SCORE_NOT_READY / ANALYSIS_NOT_READY / ROADMAP_NOT_READY | 422 | CV AI |
+| JOB_NOT_FOUND / APPLICATION_NOT_FOUND | 404 | Job |
+| ALREADY_APPLIED / JOB_NOT_PUBLISHED / JOB_HAS_APPLICATIONS | 409 | Job |
+| REQUEST_ALREADY_PENDING / ALREADY_RECRUITER / REQUEST_ALREADY_RESOLVED | 409 | Recruiter |
+| SESSION_NOT_FOUND / QUESTION_NOT_FOUND / RECORDING_NOT_FOUND | 404 | Interview |
+| INVALID_STATUS_TRANSITION | 409 | Chung (JD, Session, Application, User) |
+| QUESTION_ALREADY_ANSWERED / SESSION_NOT_IN_PROGRESS / SESSION_LIMIT_REACHED / SESSION_NOT_COMPLETED | 409 | Interview |
+| TRANSCRIPT_NOT_READY / RESULT_NOT_READY / RANKING_NOT_READY | 422 | Scoring |
+| TEMPLATE_NOT_FOUND / TEMPLATE_VERSION_CONFLICT | 404 / 409 | Admin AI |
+| RATE_LIMIT_EXCEEDED | 429 | AI Service |
+
+---
+
+## 9. Ghi chú thiết kế
+
+1. **Async convention thống nhất**: tất cả kết quả bất đồng bộ dùng `422 *_NOT_READY` khi chưa sẵn sàng; `202 + Location` khi khởi tạo; trạng thái `FAILED` kèm `failureReason`. Phase sau bổ sung **SSE/WebSocket** để thay polling.
+2. **CV snapshot khi apply**: application lưu bản chụp CV tại thời điểm ứng tuyển. Nhờ đó user vẫn xoá/sửa CV được mà không phá dữ liệu recruiter đang xem — giảm phạm vi của lỗi `CV_IN_USE`.
+3. **Idempotency**: mọi endpoint 🔁 hỗ trợ `Idempotency-Key`, chống double-submit khi client retry do timeout.
+4. **Versioning**: breaking change → `/api/v2`, không sửa contract v1 đang chạy.
+5. **Rate limiting theo chi phí AI**: `POST /cvs`, `POST /interview-sessions`, `POST .../answers` giới hạn riêng theo user (Redis token bucket). Response kèm headers `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `Retry-After`.
+6. **DTO projection**: API list chỉ trả field tóm tắt; chi tiết lấy qua `GET /{id}`.
+7. **Bảo mật**:
+   - Mọi `fileUrl` là **presigned URL có thời hạn** (mặc định 1h), không expose storage path.
+   - File upload qua **virus scan** trước khi xử lý; PDF bị mã hoá/macro DOCX → `CV_PROCESSING_FAILED`.
+   - Refresh token **rotation + reuse detection**; đổi mật khẩu / reset / lock account → revoke toàn bộ token.
+   - Forgot-password và resend-verification luôn trả `204` bất kể email tồn tại — chống **user enumeration**.
+   - Response admin **mask secret** trong config AI provider.
+8. **Bước tiếp theo**: chuyển đặc tả này sang **OpenAPI 3.0 (swagger.yaml)** để validate, generate mock server cho FE và làm nguồn sự thật duy nhất (single source of truth).

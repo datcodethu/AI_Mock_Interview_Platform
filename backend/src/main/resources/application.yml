@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: backend
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/test1?createDatabaseIfNotExist=true&characterEncoding=UTF-8}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456} # Thay bằng pass thật của bạn
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:tuandatwj@gmail.com}
+    password: ${MAIL_PASSWORD:kkhnkbnzmxaekipi}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+app:
+  frontend-url: ${APP_FRONTEND_URL:http://localhost:5173}
+  jwt:
+    secret: ${JWT_SECRET:DayLaMotChuoiBiMatRatDaiVaAnToanDungDeKyTokenJwtChoUngDungCuaBan1234567890}
+  auth:
+    cookie-secure: ${APP_AUTH_COOKIE_SECURE:true}
