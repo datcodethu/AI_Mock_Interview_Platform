@@ -18,11 +18,13 @@ pipeline {
         stage('Test & Build Backend') {
             steps {
                 dir('backend') {
-                    sh './mvnw clean verify'   // chạy unit test + build, FAIL pipeline nếu test đỏ
+                    sh 'chmod +x mvnw'
+                    sh './mvnw clean verify'
                 }
             }
         }
 
+    
         stage('Test & Build Frontend') {
             steps {
                 dir('frontend') {
