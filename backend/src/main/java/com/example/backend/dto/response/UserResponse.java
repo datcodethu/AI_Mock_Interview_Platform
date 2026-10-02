@@ -1,10 +1,10 @@
 package com.example.backend.dto.response;
 
-import com.example.backend.entity.Role;
 import com.example.backend.utils.UserStatus;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 
+import java.time.LocalDateTime;
 import java.util.Set;
 
 @Setter
@@ -16,6 +16,11 @@ import java.util.Set;
 public class UserResponse {
     String id;
     String email;
+    String fullName;
+    String phone;
+    String avatarUrl;
     UserStatus status;
-    Set<Role> roles;
+    Set<String> roles;
+    LocalDateTime createdAt;
+    LocalDateTime updatedAt;
 }

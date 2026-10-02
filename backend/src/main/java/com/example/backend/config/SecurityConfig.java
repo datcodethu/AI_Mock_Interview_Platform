@@ -53,16 +53,24 @@ public class SecurityConfig {
                         "/api/v1/auth/reset-password",
                         "/api/v1/categories",
                         "/api/v1/categories/**",
+                        "/api/v1/products",
+                        "/api/v1/products/**",
+                        "/api/v1/blog-posts",
+                        "/api/v1/blog-posts/**",
+                        "/uploads/**",
                         "/api/v1/public/**"
         };
 
+        // hàm khởi tạo để inject CustomJwtAuthenticationConverter vào SecurityConfig
         public SecurityConfig(CustomJwtAuthenticationConverter customJwtConverter) {
                 this.customJwtConverter = customJwtConverter;
         }
 
+        // Cấu hình SecurityFilterChain: xác định cách Spring Security xử lý các request
+        // HTTP
         @Bean
         public SecurityFilterChain filterChain(HttpSecurity http, JwtDecoder jwtDecoder) throws Exception {
-                DefaultBearerTokenResolver defaultBearerTokenResolver = new DefaultBearerTokenResolver();
+                DefaultBearerTokenResolver defaultBearerTokenResolver = new DefaultBearerTokenResolver(); //
                 BearerTokenResolver bearerTokenResolver = request -> {
                         if ("/api/v1/auth/logout".equals(request.getServletPath())) {
                                 return null;
@@ -124,7 +132,8 @@ public class SecurityConfig {
         public JwtDecoder jwtDecoder(@Value("${app.jwt.secret}") String jwtSecret) {
                 byte[] jwtSecretBytes = jwtSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                 if (jwtSecretBytes.length < 64) {
-                        throw new IllegalStateException("app.jwt.secret must contain at least 64 UTF-8 bytes for HS512.");
+                        throw new IllegalStateException(
+                                        "app.jwt.secret must contain at least 64 UTF-8 bytes for HS512.");
                 }
                 SecretKeySpec secretKeySpec = new SecretKeySpec(jwtSecretBytes, "HmacSHA512");
                 NimbusJwtDecoder decoder = NimbusJwtDecoder

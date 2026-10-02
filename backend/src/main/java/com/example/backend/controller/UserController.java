@@ -3,16 +3,16 @@ package com.example.backend.controller;
 import com.example.backend.dto.request.CreateUserRequest;
 import com.example.backend.dto.request.UpdateUserRequest;
 import com.example.backend.dto.response.ApiResponse;
+import com.example.backend.dto.response.PageResponse;
 import com.example.backend.dto.response.ProfileResponse;
 import com.example.backend.dto.response.UserResponse;
 import com.example.backend.entity.User;
 import com.example.backend.service.UserService;
+import com.example.backend.utils.UserStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 @Slf4j
 @RestController
@@ -24,9 +24,15 @@ public class UserController {
 
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping
-    public ApiResponse<List<UserResponse>> getAllUsers() {
-        return ApiResponse.<List<UserResponse>>builder()
-                .data(userService.getAllUsers())
+    public ApiResponse<PageResponse<UserResponse>> getAllUsers(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) UserStatus status,
+            @RequestParam(required = false) String role
+    ) {
+        return ApiResponse.<PageResponse<UserResponse>>builder()
+                .data(userService.getUsers(page, size, search, status, role))
                 .code(200)
                 .message("OK")
                 .build();

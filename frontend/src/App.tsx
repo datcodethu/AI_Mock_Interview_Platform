@@ -20,8 +20,16 @@ import { ChangePasswordPage } from './pages/account/ChangePasswordPage';
 import { AdminDashboardPage } from './admin/Admindashboardpage';
 import { AdminUsersPage } from './admin/Adminuserspage';
 import { AdminCategoriesPage } from './admin/AdminCategoriesPage';
+import { AdminProductsPage } from './admin/AdminProductsPage';
+import { PublicProductsPage } from './pages/products/PublicProductsPage';
+import { PublicProductDetailPage } from './pages/products/PublicProductDetailPage';
+import { BlogPage } from './pages/blog/BlogPage';
+import { ContactPage } from './pages/contact/ContactPage';
+import { ProfilePage } from './pages/account/ProfilePage';
+import './styles/DesignSystem.css';
 import './App.css';
 import './styles/Layouts.css';
+import './styles/Products.css';
 /**
  * Cách đọc file này: mỗi <Route element={<Layout />}> là 1 "khung",
  * các <Route> con bên trong sẽ được nhét vào <Outlet /> của khung đó.
@@ -41,11 +49,14 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/categories" element={<PublicCategoriesPage />} />
             <Route path="/categories/:slug" element={<PublicCategoryDetailPage />} />
-            {/* Thêm: /products, /blog, /contact... */}
+            <Route path="/products" element={<PublicProductsPage />} />
+            <Route path="/products/:slug" element={<PublicProductDetailPage />} />
+            <Route path="/blog" element={<BlogPage />} />
+            <Route path="/contact" element={<ContactPage />} />
 
             {/* Cần đăng nhập nhưng vẫn dùng khung website (VD: trang profile) */}
             <Route element={<ProtectedRoute />}>
-              {/* <Route path="/profile" element={<ProfilePage />} /> */}
+              <Route path="/profile" element={<ProfilePage />} />
               <Route path="/account/change-password" element={<ChangePasswordPage />} />
             </Route>
           </Route>
@@ -66,6 +77,7 @@ export default function App() {
               <Route path="/admin" element={<AdminDashboardPage />} />
               <Route path="/admin/users" element={<AdminUsersPage />} />
               <Route path="/admin/categories" element={<AdminCategoriesPage />} />
+              <Route path="/admin/products" element={<AdminProductsPage />} />
             </Route>
           </Route>
         </Routes>

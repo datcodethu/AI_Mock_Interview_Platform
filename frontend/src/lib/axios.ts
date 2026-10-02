@@ -32,7 +32,9 @@ function isPublicRequest(url?: string): boolean {
   return path !== undefined && (
     publicAuthEndpoints.has(path) ||
     path === '/categories' ||
-    path.startsWith('/categories/')
+    path.startsWith('/categories/') ||
+    path === '/products' ||
+    path.startsWith('/products/')
   );
 }
 

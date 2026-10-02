@@ -11,14 +11,13 @@ import java.util.List;
 
 @Slf4j
 @Configuration
-public class ApplicationInitConfig {
+public class ApplicationInitConfig { // define role default
 
     private static final List<String> DEFAULT_ROLES = List.of("USER", "CUSTOMER", "ADMIN", "SUPER_ADMIN");
 
     @Bean
     ApplicationRunner applicationRunner(
-            RoleRepository roleRepository
-    ) {
+            RoleRepository roleRepository) {
         return args -> {
 
             DEFAULT_ROLES.forEach(roleName -> {
