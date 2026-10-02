@@ -5,6 +5,7 @@ import type { AdminUserListParams, UserProfile } from '../types/User.types';
 export function useAdminUsers(initialParams: AdminUserListParams = { page: 0, size: 20 }) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [totalPages, setTotalPages] = useState(0);
+  const [totalElements, setTotalElements] = useState(0);
   const [params, setParams] = useState<AdminUserListParams>(initialParams);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -14,8 +15,9 @@ export function useAdminUsers(initialParams: AdminUserListParams = { page: 0, si
     setError(null);
     try {
       const result = await adminService.listUsers(params);
-      setUsers(result.content);
-      setTotalPages(result.totalPages);
+      setUsers(result?.content ?? []);
+      setTotalPages(result?.totalPages ?? 0);
+      setTotalElements(result?.totalElements ?? 0);
     } catch {
       setError('Không tải được danh sách người dùng');
     } finally {
@@ -23,14 +25,10 @@ export function useAdminUsers(initialParams: AdminUserListParams = { page: 0, si
     }
   }, [params]);
 
-  // Chạy lại mỗi khi params đổi (đổi trang, gõ tìm kiếm, chọn filter status/role)
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
 
-  // 4 hành động dưới đây đều gọi lại fetchUsers() sau khi thành công, để danh sách
-  // hiển thị luôn cập nhật đúng trạng thái mới nhất — tránh tình trạng UI hiển thị
-  // "đã khoá" nhưng thật ra do state cũ, không phải data thật từ server.
   const lockUser = useCallback(async (id: string) => {
     await adminService.lockUser(id);
     await fetchUsers();
@@ -54,8 +52,9 @@ export function useAdminUsers(initialParams: AdminUserListParams = { page: 0, si
   return {
     users,
     totalPages,
+    totalElements,
     params,
-    setParams, // component gọi setParams({ ...params, page: 1 }) khi đổi trang, v.v.
+    setParams,
     isLoading,
     error,
     refetch: fetchUsers,

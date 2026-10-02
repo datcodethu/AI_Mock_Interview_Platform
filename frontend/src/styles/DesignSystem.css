@@ -1,0 +1,311 @@
+/* =========================================================
+   GIA LÊ GROUP — DESIGN SYSTEM & BASE STYLES
+   Khớp 100% token figma.md, tuân thủ tỉ lệ 60-30-10 & WCAG AA
+   ========================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Work+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+:root {
+  /* 60% Nền trung tính */
+  --cream: #f1ead9;
+  --cream-2: #e7dfc9;
+  --surface: #ffffff;
+  --surface-alt: #f8f5ee;
+
+  /* 30% Cấu trúc & Chữ chính */
+  --forest: #3b4a38;
+  --forest-dark: #2c382a;
+  --forest-light: #52634e;
+  --ink: #2a2622;
+  --ink-soft: #57503f;
+  --ink-muted: #7d7563;
+  --border: #ddd2b8;
+  --border-strong: #c2b595;
+
+  /* 10% Màu nhấn hành động chính (Primary CTA / Active) */
+  --clay: #a34a28;
+  --clay-hover: #883c1e;
+  --clay-subtle: #fbeee9;
+
+  /* Màu trạng thái ngữ nghĩa đồng bộ (Semantic Status) */
+  --success: #235c2b;
+  --success-bg: #eaf4e8;
+  --success-border: #bce0b7;
+
+  --danger: #922b21;
+  --danger-bg: #fbeeed;
+  --danger-border: #f2c1bc;
+
+  --warning: #855d00;
+  --warning-bg: #fef7e0;
+  --warning-border: #f8e19b;
+
+  --info: #1b4965;
+  --info-bg: #e6f0f5;
+  --info-border: #b5d5e5;
+
+  /* Typography */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Work Sans', system-ui, -apple-system, sans-serif;
+
+  /* Radius & Shadows */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --shadow-sm: 0 1px 3px rgba(42, 38, 34, 0.06);
+  --shadow-md: 0 4px 12px rgba(42, 38, 34, 0.08);
+  --shadow-lg: 0 10px 24px rgba(42, 38, 34, 0.1);
+}
+
+/* Dark mode tinh tế: giảm độ chói, bảo toàn độ tương phản WCAG */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --cream: #1e1b18;
+    --cream-2: #282420;
+    --surface: #26221e;
+    --surface-alt: #302b26;
+    --forest: #7a9475;
+    --forest-dark: #62795e;
+    --ink: #f2eee6;
+    --ink-soft: #c4bcae;
+    --ink-muted: #9c9384;
+    --border: #443e37;
+    --border-strong: #595248;
+    --clay: #d6714a;
+    --clay-hover: #e58763;
+    --clay-subtle: #3a251c;
+  }
+}
+
+/* Reset & Box model */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--ink);
+  margin-top: 0;
+  line-height: 1.25;
+}
+
+p {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+/* Accessibility Focus Ring (Đạt WCAG 2.1) */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--clay);
+  outline-offset: 3px;
+}
+
+/* Motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Container */
+.page-container {
+  width: min(1140px, 100%);
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+@media (max-width: 640px) {
+  .page-container {
+    padding-inline: 16px;
+  }
+}
+
+/* Typography Helpers */
+.eyebrow {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--clay);
+  margin-bottom: 8px;
+}
+
+/* Buttons (Tối thiểu 44px height trên mobile cho touch target) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background-color: var(--forest);
+  color: #ffffff;
+}
+.btn--primary:hover:not(:disabled) {
+  background-color: var(--forest-dark);
+}
+
+.btn--accent {
+  background-color: var(--clay);
+  color: #ffffff;
+}
+.btn--accent:hover:not(:disabled) {
+  background-color: var(--clay-hover);
+}
+
+.btn--ghost {
+  background-color: transparent;
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+.btn--ghost:hover:not(:disabled) {
+  background-color: var(--surface-alt);
+  border-color: var(--ink-soft);
+}
+
+.btn--danger {
+  background-color: var(--danger);
+  color: #ffffff;
+}
+.btn--danger:hover:not(:disabled) {
+  background-color: #7b241b;
+}
+
+.btn--sm {
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+}
+
+/* Form Controls */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.form-field label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.form-input,
+.form-select {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+}
+
+.form-input::placeholder {
+  color: var(--ink-muted);
+}
+
+.form-input:hover,
+.form-select:hover {
+  border-color: var(--ink-soft);
+}
+
+/* Semantic Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge--success {
+  background-color: var(--success-bg);
+  color: var(--success);
+  border: 1px solid var(--success-border);
+}
+
+.badge--danger {
+  background-color: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+}
+
+.badge--warning {
+  background-color: var(--warning-bg);
+  color: var(--warning);
+  border: 1px solid var(--warning-border);
+}
+
+.badge--info {
+  background-color: var(--info-bg);
+  color: var(--info);
+  border: 1px solid var(--info-border);
+}
+
+/* Common State Views (Empty & Error) */
+.state-box {
+  padding: 48px 24px;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  text-align: center;
+  margin-block: 20px;
+}
+.state-box__icon {
+  font-size: 2.5rem;
+  margin-bottom: 16px;
+}
+.state-box h2, .state-box h3 {
+  margin-bottom: 8px;
+}
+.state-box p {
+  color: var(--ink-soft);
+  max-width: 480px;
+  margin-inline: auto;
+  margin-bottom: 20px;
+}

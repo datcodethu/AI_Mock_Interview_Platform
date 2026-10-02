@@ -39,6 +39,17 @@ public enum ErrorCode {
     VERIFICATION_EMAIL_FAILED(1026, "Không gửi được email xác thực. Vui lòng thử lại sau.", HttpStatus.INTERNAL_SERVER_ERROR),
     CATEGORY_NOT_FOUND(1027, "Category not found", HttpStatus.NOT_FOUND),
     CATEGORY_SLUG_EXISTED(1028, "Category slug already exists", HttpStatus.CONFLICT),
+    PRODUCT_NOT_FOUND(1029, "Product not found", HttpStatus.NOT_FOUND),
+    PRODUCT_SLUG_EXISTED(1030, "Product slug already exists", HttpStatus.CONFLICT),
+    PRODUCT_SKU_EXISTED(1031, "Product SKU already exists", HttpStatus.CONFLICT),
+    INVALID_FILE_TYPE(1032, "File type is not supported. Only JPEG, PNG, WEBP, and GIF are allowed", HttpStatus.BAD_REQUEST),
+    FILE_SIZE_EXCEEDED(1033, "File size exceeds the allowed limit", HttpStatus.BAD_REQUEST),
+    FILE_UPLOAD_FAILED(1034, "Failed to store uploaded file", HttpStatus.INTERNAL_SERVER_ERROR),
+    BLOG_POST_NOT_FOUND(1035, "Bài viết không tồn tại", HttpStatus.NOT_FOUND),
+    BLOG_POST_SLUG_EXISTED(1036, "Đường dẫn bài viết (slug) đã tồn tại", HttpStatus.CONFLICT),
+    INVALID_COVER_IMAGE_URL(1037, "URL ảnh bìa không hợp lệ. Chỉ chấp nhận giao thức HTTP hoặc HTTPS", HttpStatus.BAD_REQUEST),
+    INVALID_EXCERPT_LENGTH(1038, "Đoạn trích (excerpt) không được vượt quá 300 ký tự", HttpStatus.BAD_REQUEST),
+    INVALID_BLOG_CONTENT(1039, "Nội dung bài viết không được để trống sau khi làm sạch", HttpStatus.BAD_REQUEST),
     ;
 
     ErrorCode(int code, String message, HttpStatusCode statusCode) {

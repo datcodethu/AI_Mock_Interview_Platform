@@ -47,7 +47,8 @@ class CategoryModuleIntegrationTests {
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext)
                 .apply(springSecurity())
                 .build();
-        jdbcTemplate.update("DELETE FROM product_entity");
+        jdbcTemplate.update("DELETE FROM product_images");
+        jdbcTemplate.update("DELETE FROM products");
         categoryRepository.deleteAll();
     }
 
@@ -150,8 +151,8 @@ class CategoryModuleIntegrationTests {
                 .slug("trang-tri")
                 .build());
         jdbcTemplate.update(
-                "INSERT INTO product_entity (id, name, category_id) VALUES (?, ?, ?)",
-                "product-1", "Bình hoa", category.getId());
+                "INSERT INTO products (id, name, category_id, slug, sku, in_stock, is_deleted, created_at, updated_at) VALUES (?, ?, ?, ?, ?, true, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                "product-1", "Bình hoa", category.getId(), "binh-hoa", "SKU-BH-1");
 
         mockMvc.perform(delete("/api/v1/admin/categories/{id}", category.getId()))
                 .andExpect(status().isOk());
@@ -160,7 +161,7 @@ class CategoryModuleIntegrationTests {
         org.junit.jupiter.api.Assertions.assertTrue(deleted.getIsDeleted());
         org.junit.jupiter.api.Assertions.assertEquals(1,
                 jdbcTemplate.queryForObject(
-                        "SELECT COUNT(*) FROM product_entity WHERE id = ?",
+                        "SELECT COUNT(*) FROM products WHERE id = ?",
                         Integer.class,
                         "product-1"));
 

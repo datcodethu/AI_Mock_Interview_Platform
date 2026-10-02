@@ -26,7 +26,7 @@ export function PublicCategoriesPage() {
       {categoriesQuery.isSuccess && categoriesQuery.data.length === 0 && (
         <div className="public-categories__empty">
           <h2>Danh mục đang được cập nhật</h2>
-          <p>Hiện chưa có danh mục sản phẩm nào. Vui lòng quay lại sau.</p>
+          <p>Hiện chưa có danh mục sản  phẩm nào. Vui lòng quay lại sau.</p>
           <Link className="btn btn--primary" to="/">Về trang chủ</Link>
         </div>
       )}
